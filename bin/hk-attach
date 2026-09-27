@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Workload entrypoint. Makes sure the daemons are up (in case the startup hook
+# hasn't run or they died), then gives you an interactive Hermes CLI on the
+# same HERMES_HOME the gateway uses.
+set -euo pipefail
+hk-boot || echo "hk-attach: hk-boot failed; see ~/state/logs" >&2
+exec hermes "$@"

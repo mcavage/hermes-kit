@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Startup hook (every boot, incl. the 24h timer restart). Seeds state on first
+# boot, then runs signal-cli and the Hermes gateway under hk-supervise.
+# Idempotent: safe to run again while the daemons are already up.
+set -euo pipefail
+
+: "${SIGNAL_ACCOUNT:?SIGNAL_ACCOUNT must be set (kit arg signalAccount)}"
+HK_STATE="${HK_STATE:-/home/agent/state}"
+export HERMES_HOME="${HERMES_HOME:-$HK_STATE/hermes}"
+mkdir -p "$HERMES_HOME" "$HK_STATE/signal-cli" "$HK_STATE/logs" "$HK_STATE/run"
+chmod 700 "$HK_STATE" "$HK_STATE/signal-cli"
+
+# Seed once; never overwrite your edits.
+[ -f "$HERMES_HOME/config.yaml" ] || cp /opt/hermes-kit/config/config.yaml "$HERMES_HOME/config.yaml"
+[ -f "$HERMES_HOME/SOUL.md" ]     || cp /opt/hermes-kit/context/SOUL.md     "$HERMES_HOME/SOUL.md"
+
+# Own-number hardening. Only Note to Self gets through; everyone else is ignored.
+export SIGNAL_HTTP_URL=http://127.0.0.1:8080
+export SIGNAL_ALLOWED_USERS="$SIGNAL_ACCOUNT"
+export SIGNAL_HOME_CHANNEL="$SIGNAL_ACCOUNT"
+export SIGNAL_REACTIONS=false
+unset SIGNAL_GROUP_ALLOWED_USERS SIGNAL_ALLOW_ALL_USERS GATEWAY_ALLOW_ALL_USERS
+
+# Don't start signal-cli until the device is linked (make link); the gateway
+# still comes up for CLI/cron use.
+if [ -n "$(ls -A "$HK_STATE/signal-cli" 2>/dev/null)" ]; then
+  hk-supervise signal-cli signal-cli -a "$SIGNAL_ACCOUNT" daemon --http 127.0.0.1:8080 --no-receive-stdout
+else
+  echo "hk-boot: signal-cli not linked yet; run 'make link'" >&2
+fi
+hk-supervise gateway hermes gateway run
+
+# Flush signal-cli 5 minutes before the sandbox's timer restart. Each boot
+# starts a fresh TTL, so the deadline is relative to now.
+ttl="${HK_TTL_SECONDS:-86400}"
+hk-supervise quiesce-timer bash -c "sleep $(( ttl - 300 )); hk-quiesce; sleep infinity"

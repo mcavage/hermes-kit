@@ -1,0 +1,135 @@
+# syntax=docker/sandbox-kit:3
+#
+# Personal Hermes agent: gateway + signal-cli daemon, full-auto, always on.
+# Linked to the owner's own Signal number; only Note to Self reaches it.
+schemaVersion: "3"
+kind: workload
+displayName: Hermes (mcavage)
+description: Always-on Hermes Agent on Signal (Note to Self), Fastmail read + drafts, GitHub push
+sourceUrl: https://github.com/mcavage/hermes-kit
+licenses: [MIT]
+dockerfile: hermes.dockerfile
+
+args:
+  signalAccount:
+    required: true
+    pattern: '^\+[1-9][0-9]{6,14}$'
+    description: Your own Signal number (E.164). It's both the linked account and the only allowed sender.
+    env: SIGNAL_ACCOUNT
+
+capabilities:
+  - type: com.docker.sandbox/sbx@1
+
+  # Not in sbx 0.45.x yet; cloud sandboxes don't stop on disconnect anyway.
+  - type: com.docker.sandbox/long-running@1
+    optional: true
+
+  - type: com.docker.sandbox/network-policy@1
+    config:
+      runtime:
+        allow:
+          # models
+          - api.anthropic.com:443
+          - api.openai.com:443
+          - generativelanguage.googleapis.com:443
+          # github (push)
+          - github.com:443
+          - api.github.com:443
+          - uploads.github.com:443
+          - codeload.github.com:443
+          - objects.githubusercontent.com:443
+          - raw.githubusercontent.com:443
+          # fastmail MCP (token injected by a cloud custom secret)
+          - api.fastmail.com:443
+          # web search
+          - api.parallel.ai:443
+          - api.exa.ai:443
+          # signal
+          - chat.signal.org:443
+          - storage.signal.org:443
+          - cdn.signal.org:443
+          - cdn2.signal.org:443
+          - cdn3.signal.org:443
+          - cdsi.signal.org:443
+          - svr2.signal.org:443
+          - svrb.signal.org:443
+          - updates.signal.org:443
+          - updates2.signal.org:443
+
+  - type: com.docker.sandbox/credential@1
+    description: Anthropic (main model)
+    config:
+      service: anthropic
+      phase: runtime
+      apiKey:
+        name: ANTHROPIC_API_KEY
+        proxyManaged: true
+        inject:
+          - {domain: api.anthropic.com, header: x-api-key, format: "%s"}
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: OpenAI (fallback model)
+    config:
+      service: openai
+      phase: runtime
+      apiKey:
+        name: OPENAI_API_KEY
+        proxyManaged: true
+        inject:
+          - {domain: api.openai.com, header: Authorization, format: "Bearer %s"}
+  - type: com.docker.sandbox/credential@1
+    optional: true
+    description: Google (vision / cheap auxiliary)
+    config:
+      service: google
+      phase: runtime
+      apiKey:
+        name: GEMINI_API_KEY
+        proxyManaged: true
+        inject:
+          - {domain: generativelanguage.googleapis.com, header: x-goog-api-key, format: "%s"}
+  - type: com.docker.sandbox/credential@1
+    description: GitHub (gh + git push)
+    config:
+      service: github
+      phase: runtime
+      apiKey:
+        name: GH_TOKEN
+        proxyManaged: true
+        inject:
+          - {domain: api.github.com, header: Authorization, format: "Bearer %s"}
+          - {domain: uploads.github.com, header: Authorization, format: "Bearer %s"}
+          - {domain: github.com, scheme: basic, username: x-access-token}
+
+  - type: com.docker.sandbox/lifecycle@1
+    config:
+      startup:
+        # Every boot, including the 24h timer restart. Starts signal-cli and
+        # the gateway under supervision. Hook env is deny-by-default, so the
+        # daemons only see what's listed here.
+        # TODO(phase 1): confirm the proxy/CA var names the cloud runtime sets.
+        - command: [/usr/local/bin/hk-boot]
+          user: agent
+          background: true
+          env:
+            - SIGNAL_ACCOUNT
+            - ANTHROPIC_API_KEY
+            - OPENAI_API_KEY
+            - GEMINI_API_KEY
+            - GH_TOKEN
+            - PARALLEL_API_KEY
+            - FASTMAIL_API_TOKEN
+            - HTTP_PROXY
+            - HTTPS_PROXY
+            - NO_PROXY
+            - http_proxy
+            - https_proxy
+            - no_proxy
+            - SSL_CERT_FILE
+            - REQUESTS_CA_BUNDLE
+          description: Seed state, start signal-cli + hermes gateway (supervised)
+
+  - type: com.docker.sandbox/agent-context@1
+    config:
+      filename: AGENTS.md
+      contentFile: ./context/AGENTS.md

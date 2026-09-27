@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stop signal-cli cleanly so its ratchet state is flushed. Run before the 24h
+# timer restart (Hermes cron) and before `make upgrade` copies state out.
+# The gateway keeps running; hk-boot on the next boot brings signal-cli back.
+set -euo pipefail
+hk-supervise --stop signal-cli
+sync
+echo "signal-cli stopped; state flushed"

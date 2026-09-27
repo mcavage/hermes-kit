@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# hk-supervise NAME CMD... : run CMD detached, restart on exit with backoff.
+# One instance per NAME (pidfile). Logs to $HK_STATE/logs/NAME.log.
+# `hk-supervise --stop NAME` stops it (used before the 24h restart and upgrades).
+set -euo pipefail
+HK_STATE="${HK_STATE:-/home/agent/state}"
+RUN="$HK_STATE/run"; LOGS="$HK_STATE/logs"
+mkdir -p "$RUN" "$LOGS"
+
+if [ "${1:-}" = "--stop" ]; then
+  name="$2"; pid="$(cat "$RUN/$name.pid" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -TERM -- "-$pid" 2>/dev/null || true
+  rm -f "$RUN/$name.pid"
+  exit 0
+fi
+
+name="$1"; shift
+pidfile="$RUN/$name.pid"
+if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+  exit 0  # already supervised
+fi
+
+setsid bash -c '
+  name="$1"; log="$2"; shift 2
+  delay=2
+  while :; do
+    start=$(date +%s)
+    echo "[$(date -u +%FT%TZ)] hk-supervise: starting $name" >>"$log"
+    "$@" >>"$log" 2>&1; rc=$?
+    echo "[$(date -u +%FT%TZ)] hk-supervise: $name exited ($rc)" >>"$log"
+    # Reset backoff after a healthy run of 5 minutes.
+    [ $(( $(date +%s) - start )) -gt 300 ] && delay=2
+    sleep "$delay"; delay=$(( delay < 60 ? delay * 2 : 60 ))
+  done
+' hk-supervise "$name" "$LOGS/$name.log" "$@" </dev/null >/dev/null 2>&1 &
+echo $! >"$pidfile"

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Probe each dependency and report honestly. Exit non-zero if anything required fails.
+set -uo pipefail
+HK_STATE="${HK_STATE:-/home/agent/state}"
+fail=0
+ok()   { printf 'ok    %s\n' "$1"; }
+bad()  { printf 'FAIL  %s: %s\n' "$1" "$2"; fail=1; }
+warn() { printf 'warn  %s: %s\n' "$1" "$2"; }
+
+pid_alive() { [ -f "$HK_STATE/run/$1.pid" ] && kill -0 "$(cat "$HK_STATE/run/$1.pid")" 2>/dev/null; }
+
+pid_alive gateway    && ok "gateway supervised"    || bad gateway "not running (see $HK_STATE/logs/gateway.log)"
+if pid_alive signal-cli; then
+  curl -fsS -m 5 http://127.0.0.1:8080/api/v1/check >/dev/null \
+    && ok "signal-cli daemon answering" || bad signal-cli "supervised but /api/v1/check failed"
+else
+  [ -n "$(ls -A "$HK_STATE/signal-cli" 2>/dev/null)" ] \
+    && bad signal-cli "linked but not running" || warn signal-cli "not linked (make link)"
+fi
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.anthropic.com/v1/models -H 'anthropic-version: 2023-06-01')
+[ "$code" = 200 ] && ok "anthropic auth (proxy-injected)" || bad anthropic "GET /v1/models -> $code"
+
+gh auth status >/dev/null 2>&1 && ok "gh auth" || bad github "gh auth status failed"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -m 10 https://api.fastmail.com/jmap/session)
+[ "$code" = 200 ] && ok "fastmail token (proxy-injected)" || warn fastmail "GET /jmap/session -> $code"
+
+exit $fail

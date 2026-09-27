@@ -1,0 +1,52 @@
+# Seeded into $HERMES_HOME on first boot only. After that it's yours: edit it
+# in the sandbox (hermes config set ...) and it survives restarts.
+
+model:
+  provider: anthropic
+  default: claude-opus-5-5
+
+fallback_providers:
+  - {provider: openai, model: gpt-6-astra}
+
+auxiliary:
+  compression:      {provider: anthropic, model: claude-haiku-4-5-20251001}
+  title_generation: {provider: anthropic, model: claude-haiku-4-5-20251001}
+  vision:           {provider: gemini, model: gemini-3.8-flash}
+
+cron:
+  model: claude-sonnet-5
+
+# The microVM is the boundary. Full-auto, same posture as pix.
+terminal:
+  backend: local
+
+memory:
+  memory_enabled: true
+  user_profile_enabled: true
+
+skills:
+  external_dirs: [/opt/hermes-kit/skills]
+  auto_load: [writing-voice, anti-slop, signal-voice]
+
+# Own-number mode: anyone who isn't you gets silence. No pairing codes,
+# no typing indicator, no "gateway online" ping after every 24h restart.
+unauthorized_dm_behavior: ignore
+platforms:
+  signal:
+    typing_indicator: false
+    gateway_restart_notification: false
+    unauthorized_dm_behavior: ignore
+    require_mention: true
+
+platform_toolsets:
+  cli: [hermes-cli]
+  signal: [hermes-signal]
+
+mcp_servers:
+  # Auth comes from a cloud custom secret on api.fastmail.com (the proxy adds
+  # the Bearer header), so no headers here. Token scopes: Read data + Make
+  # changes, never Send. The excludes block deletes and sends even so.
+  fastmail:
+    url: https://api.fastmail.com/mcp
+    tools:
+      exclude: ["*delete*", "*destroy*", "*trash*", "*send*", "*submit*"]

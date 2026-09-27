@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Pins signal-cli's data dir to the state dir so every caller (daemon, make
+# link, you in a shell) sees the same account.
+exec /usr/local/libexec/signal-cli --config "${HK_STATE:-/home/agent/state}/signal-cli" "$@"
