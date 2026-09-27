@@ -13,8 +13,8 @@
 # (same commands, minus the `sbx --cloud exec` prefix).
 
 REGISTRY  ?= docker.io/mcavage
-VERSION   ?= 0.1.0
-BASE_TAG  ?= $(VERSION)
+VERSION   ?= 0.1.1
+BASE_TAG  ?= 0.1.0
 BASE      := $(REGISTRY)/hermes-base:$(BASE_TAG)
 KIT       := $(REGISTRY)/hermes-kit:$(VERSION)
 NAME      ?= hermes
