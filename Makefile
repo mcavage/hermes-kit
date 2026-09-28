@@ -7,7 +7,7 @@
 #   make link                      # scan the QR in Signal > Linked devices
 #   make doctor
 #
-# Known sbx bug (see sandboxes-feedback.md #1): once a sandbox is created with
+# Known sbx bug (nightly 55b8dd3, v0.46.0-rc5): once a sandbox is created with
 # --on-timeout restart, `sbx --cloud exec/cp` fail with "unknown on_timeout 4".
 # Until that's fixed, run link/doctor/logs from the Console web terminal
 # (same commands, minus the `sbx --cloud exec` prefix).

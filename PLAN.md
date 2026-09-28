@@ -4,6 +4,58 @@ A personal Hermes Agent, packaged as a Sandbox Kit v3 on DHI, running in Docker 
 
 pix is the coding agent you sit in front of. This is the one that runs while you don't. We reuse pix's plumbing ideas (kit, egress, secrets posture, voice) but not its host-side pieces, because in the cloud there is no host.
 
+## Status (2026-09-28)
+
+**Built and verified locally:**
+- `mcavage/hermes-base:0.1.0` on Docker Hub (arm64). It's DHI `sbx-templates:shell` pinned by digest, plus Hermes `main@ca16be5` on Python 3.14.7, plus signal-cli 0.14.8 native built with GraalVM against libsignal 0.102.1 compiled from Rust source.
+- `mcavage/hermes-kit:0.1.2` on Docker Hub. The v3 descriptor was accepted by `sandbox-kit 3.0.0-m.6`.
+- Local smoke test: `hk-boot` is idempotent, the gateway comes up under supervision, all skills load, and it boots with no network.
+- Cloud secrets set: anthropic, openai, google. **Still missing:** github, fastmail.
+
+**Not yet run in the cloud.** `make up` hasn't happened.
+
+**Known sbx bug:** once a sandbox is created with `--on-timeout restart`, `sbx --cloud exec/cp/inspect` fail with `unknown on_timeout 4`. Until that's fixed, `make link/doctor/logs/upgrade` need the Console web terminal.
+
+## Next up: prompt-injection hardening (decided, not built)
+
+Threat model: the agent reads the open web and email, so assume it can be turned by content. A turned agent must not be able to:
+- steal keys (already true: the proxy injects them);
+- steal your Signal identity;
+- message anyone but you;
+- send email;
+- wreck repos;
+- persist an injection.
+
+Leaking mail or private repo contents is the accepted residual risk.
+
+1. **Signal: no messaging anyone but you.**
+   - signal-cli runs as a separate `signal` user, with data dir `0700`, on a Unix socket.
+   - A small filter proxy is the only thing Hermes talks to:
+     - allowed: `GET /api/v1/check`, `GET /api/v1/events`, and RPC `listContacts`/`getContact`/`getAttachment`;
+     - `send` only when the recipient is exactly `SIGNAL_ACCOUNT` (no groups, usernames or extra recipients);
+     - deny `sendTyping`, `sendReaction` and everything else.
+   - Signal's automatic delivery receipts are protocol-level and still go out, same as on your phone.
+2. **No email sending.** Already enforced server-side: the Fastmail token has no Send scope, and send/delete tools are excluded in config.
+3. **No sudo for the agent user.** Separate `agent` / `quarantine` / `signal` users with `0700` dirs.
+4. **Deterministic guards.**
+   - A Hermes `pre_tool_call` shell hook blocks `git push --force`, pushes to default branches, `gh repo delete` and `gh api -X DELETE`.
+   - `skills.write_approval: true`, so background review can't persist injected skills.
+   - Branch protection on `main` (a GitHub setting).
+5. **Quarantine all outside content** (dual-LLM pattern).
+   - A quarantine HTTP service runs as the `quarantine` user: `web_search`, `web_read(url, question)`, `mail_inbox`, `mail_read(id, question)`, and a deterministic `mail_draft`.
+   - Deterministic code fetches (Parallel extract for web, JMAP for mail). A **no-tool** model answers with length-capped, structured output.
+   - Optional **Jev** screen (TypeSafe AI typed classifier) runs on fetched content and on Q's output. It needs an API key and host.
+   - Hermes's built-in web tools and Fastmail read tools are removed from the main agent.
+   - Hermes `delegate_task` can't do this: children inherit the parent's toolsets.
+6. **Network wall between the agent's shell and the web.**
+   - Docker-in-sandbox (Hermes `terminal.backend: docker`) is the clean answer, but cloud Docker support is in progress.
+   - Until then: **probe** a cloud shell sandbox for kernel version, `/sys/kernel/security/lsm` (Landlock), `iptables -m owner` from a root hook, and `unshare -n`.
+   - If user-based iptables works: agent uid can reach only a local allowlist proxy; the quarantine uid gets the web.
+   - Otherwise: a separate Q sandbox with a published port and proxy-injected bearer auth. It gets open web and **none** of your data. Mail reading stays with P.
+   - Landlock only restricts TCP ports, not hosts, so it's filesystem hardening only.
+
+**Memory: undecided.** The options are built-in memory only (current), your own pix-memory instance in the sandbox (FTS only, explicit capture), or Hindsight local-embedded (graph + reflect; restrict it to user turns so email content can't become a persistent injection).
+
 ## What changed from rev 1
 
 | Rev 1 | Rev 2 | Why |
